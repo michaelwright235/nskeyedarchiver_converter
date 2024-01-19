@@ -14,7 +14,7 @@ const NULL_OBJECT_REFERENCE_NAME: &str = "$null";
 #[derive(Error, Debug)]
 pub enum NSKeyedUnarchiverError {
     #[error("Plist error: {0}")]
-    PlistError(#[from] plist::Error),
+    PlistError(String),
     #[error("Expected '{0}' key to be a type of '{1}'")]
     WrongValueType(&'static str, &'static str),
     #[error("Missing '{0}' header key")]
@@ -31,6 +31,17 @@ pub enum NSKeyedUnarchiverError {
     InvalidClassReference(String),
     #[error("Expected uid value for key {0}")]
     ExpectedUIDValue(String)
+}
+
+impl From<plist::Error> for NSKeyedUnarchiverError {
+    fn from(value: plist::Error) -> Self {
+        Self::PlistError(
+            match value.is_io() {
+                true => value.into_io().unwrap().to_string(),
+                false => value.to_string()
+            }
+        )
+    }
 }
 
 macro_rules! uid {
