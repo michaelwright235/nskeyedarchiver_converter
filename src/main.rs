@@ -11,17 +11,29 @@ struct Args {
     file_out: String,
 
     /// Export plist in a binary format
-    #[arg(short, long)]
+    #[arg(short)]
     binary: bool,
+
+    /// Leave $null values. By default they're omitted
+    #[arg(short)]
+    leave_null: bool,
+
+    /// Treat dictionaries and arrays as regular classes. A $classes key gets retained.
+    /// By default those are transformed into native plist structures.
+    #[arg(short)]
+    treat_all_as_classes: bool
 }
 
 fn main() -> Result<(), ConverterError> {
     let args = Args::parse();
-    let decoded_file = Converter::from_file(args.file_in)?.decode()?;
+    let mut decoded_file = Converter::from_file(args.file_in)?;
+
+    decoded_file.set_leave_null_values(args.leave_null);
+    decoded_file.set_treat_all_as_classes(args.treat_all_as_classes);
 
     match args.binary {
-        true => decoded_file.to_file_binary(args.file_out)?,
-        false => decoded_file.to_file_xml(args.file_out)?
+        true => decoded_file.decode()?.to_file_binary(args.file_out)?,
+        false => decoded_file.decode()?.to_file_xml(args.file_out)?
     }
     Ok(())
 }

@@ -58,6 +58,8 @@ macro_rules! uid {
 pub struct Converter {
     objects: Vec<Value>,
     top: Dictionary,
+    treat_all_as_classes: bool,
+    leave_null_values: bool
 }
 
 impl Converter {
@@ -113,6 +115,8 @@ impl Converter {
         Ok(Self {
             objects,
             top,
+            treat_all_as_classes: false,
+            leave_null_values: false
         })
     }
     pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, ConverterError> {
@@ -159,7 +163,6 @@ impl Converter {
         let object_ref = uid.get();
 
         if object_ref == 0 {
-            //println!("uid == 0");
             return Ok(None);
         }
 
@@ -168,8 +171,8 @@ impl Converter {
         };
 
         if let Some(s) = dereferenced_object.as_string() {
-            if s == NULL_OBJECT_REFERENCE_NAME {
-                //return None;
+            if s == NULL_OBJECT_REFERENCE_NAME && !self.leave_null_values {
+                return Ok(None);
             }
         }
 
@@ -196,23 +199,27 @@ impl Converter {
                 if found {
                     break;
                 }
-                result = match name {
-                    "NSMutableDictionary" | "NSDictionary" => {
-                        found = true;
-                        //println!("decode_object: Decoding dictionary (uid={})", object_ref);
-                        Some(self.decode_dict(object_ref, dict)?)
+                result = if !self.treat_all_as_classes {
+                    match name {
+                        "NSMutableDictionary" | "NSDictionary" => {
+                            found = true;
+                            //println!("decode_object: Decoding dictionary (uid={})", object_ref);
+                            Some(self.decode_dict(object_ref, dict)?)
+                        }
+                        "NSMutableArray" | "NSArray" => {
+                            found = true;
+                            //println!("decode_object: Decoding array (uid={})", object_ref);
+                            Some(self.decode_array(object_ref, dict)?)
+                        }
+                        _ => {
+                            found = true;
+                            //println!("decode_object: Decoding basic class (uid={})", object_ref);
+                            Some(self.decode_custom_class(object_ref, dict)?)
+                        }
                     }
-                    "NSMutableArray" | "NSArray" => {
-                        found = true;
-                        //println!("decode_object: Decoding array (uid={})", object_ref);
-                        Some(self.decode_array(object_ref, dict)?)
-                    }
-                    _ => {
-                        found = true;
-                        //println!("decode_object: Decoding basic class (uid={})", object_ref);
-                        Some(self.decode_custom_class(object_ref, dict)?)
-                    }
-                };
+                } else {
+                    Some(self.decode_custom_class(object_ref, dict)?)
+                }
             }
             Ok(result)
         } else {
@@ -354,5 +361,24 @@ impl Converter {
         }
 
         Ok(Value::Array(array_of_dicts))
+    }
+
+    /// If set to true, treats dictionaries and arrays as regular classes.
+    /// A $classes key gets retained. By default those are transformed into native plist structures.
+    pub fn set_treat_all_as_classes(&mut self, value: bool) {
+        self.treat_all_as_classes = value;
+    }
+
+    pub fn treat_all_as_classes(&self) -> bool {
+        self.treat_all_as_classes
+    }
+
+    /// If set to true, leaves `$null` values. By default they're omitted.
+    pub fn set_leave_null_values(&mut self, value: bool) {
+        self.treat_all_as_classes = value;
+    }
+
+    pub fn leave_null_values(&self) -> bool {
+        self.leave_null_values
     }
 }
