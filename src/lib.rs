@@ -29,6 +29,19 @@ pub enum NSKeyedUnarchiverError {
     InvalidObjectEncoding(u64),
     #[error("Invalid class reference ({0}). The data may be corrupt.")]
     InvalidClassReference(String),
+    #[error("Expected uid value for key {0}")]
+    ExpectedUIDValue(String)
+}
+
+macro_rules! uid {
+    ($name:ident, $key:expr) => {
+        match ($name.as_uid()) {
+            Some(u) => u,
+            None => {
+                return Err(NSKeyedUnarchiverError::ExpectedUIDValue($key))
+            }
+        }
+    };
 }
 
 pub struct NSKeyedUnarchiver {
@@ -38,7 +51,9 @@ pub struct NSKeyedUnarchiver {
 
 impl NSKeyedUnarchiver {
     pub fn new(plist: Value) -> Result<Self, NSKeyedUnarchiverError> {
-        let mut dict = plist.into_dictionary().unwrap();
+        let Some(mut dict) = plist.into_dictionary() else {
+            return Err(NSKeyedUnarchiverError::WrongValueType("root", "Dictionary"));
+        };
 
         // Check $archiver key
         let archiver_key = Self::get_header_key(&mut dict, ARCHIVER_KEY_NAME)?;
@@ -109,11 +124,14 @@ impl NSKeyedUnarchiver {
     pub fn decode(&mut self) -> Result<Value, NSKeyedUnarchiverError> {
         let mut dict = Dictionary::new();
         for (key, value) in &self.top {
-            println!("-- TOP: {key} (uid={}) --", value.as_uid().unwrap().get());
+            let uid = uid!(value, key.to_string());
+            println!("-- TOP: {key} (uid={}) --", uid.get());
+            let Some(value) = self.decode_object(&uid.clone())? else {
+                return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid.get()));
+            };
             dict.insert(
                 key.clone(),
-                self.decode_object(value.clone().as_uid().unwrap())?
-                    .unwrap(),
+                value,
             );
         }
         Ok(Value::Dictionary(dict))
@@ -134,11 +152,9 @@ impl NSKeyedUnarchiver {
             return Ok(None);
         }
 
-        if self.objects.get(object_ref as usize).is_none() {
+        let Some(dereferenced_object) = self.objects.get(object_ref as usize) else {
             return Err(NSKeyedUnarchiverError::InvalidObjectReference(object_ref));
         };
-
-        let dereferenced_object = &self.objects[object_ref as usize];
 
         if let Some(s) = dereferenced_object.as_string() {
             if s == NULL_OBJECT_REFERENCE_NAME {
@@ -163,7 +179,7 @@ impl NSKeyedUnarchiver {
                 )));
             };
 
-            let class_names = self.get_class_names(class_reference);
+            let class_names = self.get_class_names(class_reference)?;
             let mut found = false;
             for name in class_names {
                 if found {
@@ -173,16 +189,17 @@ impl NSKeyedUnarchiver {
                     "NSMutableDictionary" | "NSDictionary" => {
                         found = true;
                         println!("decode_object: Decoding dictionary (uid={})", object_ref);
-                        Some(self.decode_dict(dict)?)
+                        Some(self.decode_dict(object_ref, dict)?)
                     }
                     "NSMutableArray" | "NSArray" => {
                         found = true;
                         println!("decode_object: Decoding array (uid={})", object_ref);
-                        Some(self.decode_array(dict)?)
+                        Some(self.decode_array(object_ref, dict)?)
                     }
                     _ => {
+                        found = true;
                         println!("decode_object: Decoding basic class (uid={})", object_ref);
-                        Some(self.decode_custom_class(dict)?)
+                        Some(self.decode_custom_class(object_ref, dict)?)
                     }
                 };
             }
@@ -193,21 +210,27 @@ impl NSKeyedUnarchiver {
         }
     }
 
-    fn get_class_names(&self, uid: &plist::Uid) -> Vec<&str> {
+    fn get_class_names(&self, uid: &plist::Uid) -> Result<Vec<&str>, NSKeyedUnarchiverError> {
         println!("get_class_names: uid = {}", uid.get());
-        let obj = self.objects.get(uid.get() as usize).unwrap();
-        let names = obj
+
+        let Some(obj) = self.objects.get(uid.get() as usize) else {
+            return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid.get()));
+        };
+
+        let Some(names) = obj
             .as_dictionary()
-            .unwrap()
-            .get("$classes")
-            .unwrap()
-            .as_array()
-            .unwrap();
+            .and_then(|dict| dict.get("$classes").and_then(|classes| classes.as_array())) else {
+                return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid.get()));
+            };
+
         let mut vec_of_names = Vec::new();
         for name in names {
-            vec_of_names.push(name.as_string().unwrap());
+            let Some(name) = name.as_string() else {
+                return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid.get()));
+            };
+            vec_of_names.push(name);
         }
-        vec_of_names
+        Ok(vec_of_names)
     }
 
     fn is_container(val: &Value) -> bool {
@@ -221,17 +244,19 @@ impl NSKeyedUnarchiver {
         }
     }
 
-    fn decode_custom_class(&self, val: &Dictionary) -> Result<Value, NSKeyedUnarchiverError> {
+    fn decode_custom_class(&self, uid: u64, val: &Dictionary) -> Result<Value, NSKeyedUnarchiverError> {
         let mut class_dict = Dictionary::new();
         for (key, value) in val {
             if key == "$class" {
                 println!("{:?}", value);
-                let classes_obj = self.decode_object(value.as_uid().unwrap())?.unwrap();
-                let classes = classes_obj
+                let Some(classes_obj) = self.decode_object(uid!(value, key.to_string()))? else {
+                    return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid));
+                };
+                let Some(classes) = classes_obj
                     .as_dictionary()
-                    .unwrap()
-                    .get("$classes")
-                    .unwrap();
+                    .and_then(|dict| dict.get("$classes")) else {
+                        return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid));
+                    };
                 class_dict.insert("$classes".to_string(), classes.clone());
                 continue;
             }
@@ -249,12 +274,14 @@ impl NSKeyedUnarchiver {
         Ok(Value::Dictionary(class_dict))
     }
 
-    fn decode_array(&self, val: &Dictionary) -> Result<Value, NSKeyedUnarchiverError> {
+    fn decode_array(&self, uid: u64, val: &Dictionary) -> Result<Value, NSKeyedUnarchiverError> {
         println!("decode_array: {:?}", val);
-        let raw_object = val.get("NS.objects").unwrap().as_array().unwrap();
+        let Some(raw_object) = val.get("NS.objects").and_then(|objs| objs.as_array()) else {
+            return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid));
+        };
         let mut array: Vec<Value> = Vec::with_capacity(raw_object.len());
         for element in raw_object {
-            let decoded_value = self.decode_object(element.as_uid().unwrap())?;
+            let decoded_value = self.decode_object(uid!(element, "NS.objects".to_string()))?;
             if let Some(v) = decoded_value {
                 array.push(v);
             } else {
@@ -264,9 +291,13 @@ impl NSKeyedUnarchiver {
         Ok(Value::Array(array))
     }
 
-    fn decode_dict(&self, val: &Dictionary) -> Result<Value, NSKeyedUnarchiverError> {
-        let keys = val.get("NS.keys").unwrap().as_array().unwrap();
-        let values = val.get("NS.objects").unwrap().as_array().unwrap();
+    fn decode_dict(&self, uid: u64, val: &Dictionary) -> Result<Value, NSKeyedUnarchiverError> {
+        let Some(keys) = val.get("NS.keys").and_then(|keys| keys.as_array()) else {
+            return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid));
+        };
+        let Some(values) = val.get("NS.objects").and_then(|objs| objs.as_array()) else {
+            return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid));
+        };
         println!("Decode dict, keys: {:?}", keys);
         println!("Decode dict, values: {:?}", values);
 
@@ -274,10 +305,16 @@ impl NSKeyedUnarchiver {
         let mut decoded_keys = Vec::with_capacity(keys.len());
         let mut decoded_values = Vec::with_capacity(values.len());
         for key in keys {
-            decoded_keys.push(self.decode_object(key.as_uid().unwrap())?.unwrap());
+            let Some(decoded_key) = self.decode_object(uid!(key, "NS.keys".to_string()))? else {
+                return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid));
+            };
+            decoded_keys.push(decoded_key);
         }
         for value in values {
-            decoded_values.push(self.decode_object(value.as_uid().unwrap())?.unwrap());
+            let Some(decoded_value) = self.decode_object(uid!(value, "NS.objects".to_string()))? else {
+                return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid));
+            };
+            decoded_values.push(decoded_value);
         }
 
         println!("decode_dict: decoded_keys = {:?}", decoded_keys);
