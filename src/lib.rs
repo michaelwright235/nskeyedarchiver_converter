@@ -1,5 +1,5 @@
 pub use plist;
-use plist::{Dictionary, Value};
+use plist::{Dictionary, Uid, Value};
 use thiserror::Error;
 
 const ARCHIVER: &str = "NSKeyedArchiver";
@@ -30,17 +30,15 @@ pub enum ConverterError {
     #[error("Invalid class reference ({0}). The data may be corrupt.")]
     InvalidClassReference(String),
     #[error("Expected uid value for key {0}")]
-    ExpectedUIDValue(String)
+    ExpectedUIDValue(String),
 }
 
 impl From<plist::Error> for ConverterError {
     fn from(value: plist::Error) -> Self {
-        Self::PlistError(
-            match value.is_io() {
-                true => value.into_io().unwrap().to_string(),
-                false => value.to_string()
-            }
-        )
+        Self::PlistError(match value.is_io() {
+            true => value.into_io().unwrap().to_string(),
+            false => value.to_string(),
+        })
     }
 }
 
@@ -48,9 +46,7 @@ macro_rules! uid {
     ($name:ident, $key:expr) => {
         match ($name.as_uid()) {
             Some(u) => u,
-            None => {
-                return Err(ConverterError::ExpectedUIDValue($key))
-            }
+            None => return Err(ConverterError::ExpectedUIDValue($key)),
         }
     };
 }
@@ -59,10 +55,12 @@ pub struct Converter {
     objects: Vec<Value>,
     top: Dictionary,
     treat_all_as_classes: bool,
-    leave_null_values: bool
+    leave_null_values: bool,
 }
 
 impl Converter {
+    /// Creates a new converter for a [plist::Value]. It should have a
+    /// NSKeyedArchiver plist structure.
     pub fn new(plist: Value) -> Result<Self, ConverterError> {
         let Some(mut dict) = plist.into_dictionary() else {
             return Err(ConverterError::WrongValueType("root", "Dictionary"));
@@ -71,10 +69,7 @@ impl Converter {
         // Check $archiver key
         let archiver_key = Self::get_header_key(&mut dict, ARCHIVER_KEY_NAME)?;
         let Some(archiver_str) = archiver_key.as_string() else {
-            return Err(ConverterError::WrongValueType(
-                ARCHIVER_KEY_NAME,
-                "String",
-            ));
+            return Err(ConverterError::WrongValueType(ARCHIVER_KEY_NAME, "String"));
         };
 
         if archiver_str != ARCHIVER {
@@ -84,10 +79,7 @@ impl Converter {
         // Check $version key
         let version_key = Self::get_header_key(&mut dict, VERSION_KEY_NAME)?;
         let Some(version_num) = version_key.as_unsigned_integer() else {
-            return Err(ConverterError::WrongValueType(
-                VERSION_KEY_NAME,
-                "Number",
-            ));
+            return Err(ConverterError::WrongValueType(VERSION_KEY_NAME, "Number"));
         };
 
         if version_num != ARCHIVER_VERSION {
@@ -97,45 +89,49 @@ impl Converter {
         // Check $top key
         let top_key = Self::get_header_key(&mut dict, TOP_KEY_NAME)?;
         let Some(top) = top_key.to_owned().into_dictionary() else {
-            return Err(ConverterError::WrongValueType(
-                TOP_KEY_NAME,
-                "Dictionary",
-            ));
+            return Err(ConverterError::WrongValueType(TOP_KEY_NAME, "Dictionary"));
         };
 
         // Check $objects key
         let objects_key = Self::get_header_key(&mut dict, OBJECTS_KEY_NAME)?;
         let Some(objects) = objects_key.into_array() else {
-            return Err(ConverterError::WrongValueType(
-                OBJECTS_KEY_NAME,
-                "Array",
-            ));
+            return Err(ConverterError::WrongValueType(OBJECTS_KEY_NAME, "Array"));
         };
 
         Ok(Self {
             objects,
             top,
             treat_all_as_classes: false,
-            leave_null_values: false
+            leave_null_values: false,
         })
     }
+
+    /// Reads a plist file and creates a new converter for it. It should have a
+    /// NSKeyedArchiver plist structure.
     pub fn from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, ConverterError> {
-        let val: plist::Value = plist::from_file(path)?;
+        let val: Value = plist::from_file(path)?;
         Self::new(val)
     }
 
+    /// Reads a plist from a byte slice and creates a new converter for it.
+    /// It should have a NSKeyedArchiver plist structure.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ConverterError> {
-        let val: plist::Value = plist::from_bytes(bytes)?;
+        let val: Value = plist::from_bytes(bytes)?;
         Self::new(val)
     }
 
+    /// Reads a plist from a seekable byte stream and creates a new converter
+    /// for it. It should have a NSKeyedArchiver plist structure.
     pub fn from_reader<R: std::io::Read + std::io::Seek>(
         reader: R,
     ) -> Result<Self, ConverterError> {
-        let val: plist::Value = plist::from_reader(reader)?;
+        let val: Value = plist::from_reader(reader)?;
         Self::new(val)
     }
 
+    /// Decodes a NSKeyedArchiver encoded plist.
+    ///
+    /// If successful, returns a [plist::Value] representing a converted plist.
     pub fn decode(&mut self) -> Result<Value, ConverterError> {
         let mut dict = Dictionary::new();
         for (key, value) in &self.top {
@@ -144,12 +140,28 @@ impl Converter {
             let Some(value) = self.decode_object(&uid.clone())? else {
                 return Err(ConverterError::InvalidObjectEncoding(uid.get()));
             };
-            dict.insert(
-                key.clone(),
-                value,
-            );
+            dict.insert(key.clone(), value);
         }
         Ok(Value::Dictionary(dict))
+    }
+
+    /// If set to true, treats dictionaries and arrays as regular classes.
+    /// A $classes key gets retained. By default those are transformed into native plist structures.
+    pub fn set_treat_all_as_classes(&mut self, value: bool) {
+        self.treat_all_as_classes = value;
+    }
+
+    pub fn treat_all_as_classes(&self) -> bool {
+        self.treat_all_as_classes
+    }
+
+    /// If set to true, leaves `$null` values. By default they're omitted.
+    pub fn set_leave_null_values(&mut self, value: bool) {
+        self.treat_all_as_classes = value;
+    }
+
+    pub fn leave_null_values(&self) -> bool {
+        self.leave_null_values
     }
 
     fn get_header_key(dict: &mut Dictionary, key: &'static str) -> Result<Value, ConverterError> {
@@ -159,7 +171,7 @@ impl Converter {
         Ok(objects_value)
     }
 
-    fn decode_object(&self, uid: &plist::Uid) -> Result<Option<Value>, ConverterError> {
+    fn decode_object(&self, uid: &Uid) -> Result<Option<Value>, ConverterError> {
         let object_ref = uid.get();
 
         if object_ref == 0 {
@@ -228,7 +240,7 @@ impl Converter {
         }
     }
 
-    fn get_class_names(&self, uid: &plist::Uid) -> Result<Vec<&str>, ConverterError> {
+    fn get_class_names(&self, uid: &Uid) -> Result<Vec<&str>, ConverterError> {
         //println!("get_class_names: uid = {}", uid.get());
 
         let Some(obj) = self.objects.get(uid.get() as usize) else {
@@ -237,9 +249,10 @@ impl Converter {
 
         let Some(names) = obj
             .as_dictionary()
-            .and_then(|dict| dict.get("$classes").and_then(|classes| classes.as_array())) else {
-                return Err(ConverterError::InvalidObjectEncoding(uid.get()));
-            };
+            .and_then(|dict| dict.get("$classes").and_then(|classes| classes.as_array()))
+        else {
+            return Err(ConverterError::InvalidObjectEncoding(uid.get()));
+        };
 
         let mut vec_of_names = Vec::new();
         for name in names {
@@ -272,9 +285,10 @@ impl Converter {
                 };
                 let Some(classes) = classes_obj
                     .as_dictionary()
-                    .and_then(|dict| dict.get("$classes")) else {
-                        return Err(ConverterError::InvalidObjectEncoding(uid));
-                    };
+                    .and_then(|dict| dict.get("$classes"))
+                else {
+                    return Err(ConverterError::InvalidObjectEncoding(uid));
+                };
                 class_dict.insert("$classes".to_string(), classes.clone());
                 continue;
             }
@@ -284,15 +298,14 @@ impl Converter {
                 Value::Array(arr) => {
                     let mut decoded_array = Vec::with_capacity(arr.len());
                     for val in arr {
-                        if let Ok(d) = self.decode_object(uid!(val, key.to_string())) {
-                            if let Some(unwrapped) = d {
-                                decoded_array.push(unwrapped);
-                            }
+                        if let Ok(Some(unwrapped)) = self.decode_object(uid!(val, key.to_string()))
+                        {
+                            decoded_array.push(unwrapped);
                         }
-                    };
+                    }
                     Some(Value::Array(decoded_array))
-                },
-                _ => Some(value.clone())
+                }
+                _ => Some(value.clone()),
             };
 
             if let Some(v) = decoded_value {
@@ -341,7 +354,8 @@ impl Converter {
             decoded_keys.push(decoded_key);
         }
         for value in values {
-            let Some(decoded_value) = self.decode_object(uid!(value, "NS.objects".to_string()))? else {
+            let Some(decoded_value) = self.decode_object(uid!(value, "NS.objects".to_string()))?
+            else {
                 return Err(ConverterError::InvalidObjectEncoding(uid));
             };
             decoded_values.push(decoded_value);
@@ -361,24 +375,5 @@ impl Converter {
         }
 
         Ok(Value::Array(array_of_dicts))
-    }
-
-    /// If set to true, treats dictionaries and arrays as regular classes.
-    /// A $classes key gets retained. By default those are transformed into native plist structures.
-    pub fn set_treat_all_as_classes(&mut self, value: bool) {
-        self.treat_all_as_classes = value;
-    }
-
-    pub fn treat_all_as_classes(&self) -> bool {
-        self.treat_all_as_classes
-    }
-
-    /// If set to true, leaves `$null` values. By default they're omitted.
-    pub fn set_leave_null_values(&mut self, value: bool) {
-        self.treat_all_as_classes = value;
-    }
-
-    pub fn leave_null_values(&self) -> bool {
-        self.leave_null_values
     }
 }
