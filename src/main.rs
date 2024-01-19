@@ -1,5 +1,5 @@
 use clap::Parser;
-use nskeyedarchive_converter::{Converter, ConverterError};
+use nskeyedarchiver_converter::{Converter, ConverterError};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
