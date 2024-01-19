@@ -15,7 +15,7 @@ struct Args {
     binary: bool,
 
     /// Leave $null values. By default they're omitted
-    #[arg(short)]
+    #[arg(short = 'n')]
     leave_null: bool,
 
     /// Treat dictionaries and arrays as regular classes. A $classes key gets retained.
