@@ -272,10 +272,22 @@ impl Converter {
                 continue;
             }
 
-            let decoded_value = match value.as_uid() {
-                Some(v) => self.decode_object(v)?,
-                None => Some(value.clone()),
+            let decoded_value = match value {
+                Value::Uid(u) => self.decode_object(u)?,
+                Value::Array(arr) => {
+                    let mut decoded_array = Vec::with_capacity(arr.len());
+                    for val in arr {
+                        if let Ok(d) = self.decode_object(uid!(val, key.to_string())) {
+                            if let Some(unwrapped) = d {
+                                decoded_array.push(unwrapped);
+                            }
+                        }
+                    };
+                    Some(Value::Array(decoded_array))
+                },
+                _ => Some(value.clone())
             };
+
             if let Some(v) = decoded_value {
                 class_dict.insert(key.clone(), v);
             } else {
