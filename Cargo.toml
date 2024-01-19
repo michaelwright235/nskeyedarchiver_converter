@@ -1,5 +1,5 @@
 [package]
-name = "nskeyedunarchiver"
+name = "nskeyedarchive_converter"
 description = "Convert NSKeyedArchive encoded plists to human readable ones"
 version = "0.1.0"
 edition = "2021"
