@@ -136,7 +136,7 @@ impl NSKeyedUnarchiver {
         let mut dict = Dictionary::new();
         for (key, value) in &self.top {
             let uid = uid!(value, key.to_string());
-            println!("-- TOP: {key} (uid={}) --", uid.get());
+            //println!("-- TOP: {key} (uid={}) --", uid.get());
             let Some(value) = self.decode_object(&uid.clone())? else {
                 return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid.get()));
             };
@@ -159,7 +159,7 @@ impl NSKeyedUnarchiver {
         let object_ref = uid.get();
 
         if object_ref == 0 {
-            println!("uid == 0");
+            //println!("uid == 0");
             return Ok(None);
         }
 
@@ -175,7 +175,7 @@ impl NSKeyedUnarchiver {
 
         let mut result = None;
         if Self::is_container(dereferenced_object) {
-            println!("decode_object: dereferenced_object (uid={object_ref}) is a container");
+            //println!("decode_object: dereferenced_object (uid={object_ref}) is a container");
             let Some(dict) = dereferenced_object.as_dictionary() else {
                 return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(object_ref));
             };
@@ -199,30 +199,30 @@ impl NSKeyedUnarchiver {
                 result = match name {
                     "NSMutableDictionary" | "NSDictionary" => {
                         found = true;
-                        println!("decode_object: Decoding dictionary (uid={})", object_ref);
+                        //println!("decode_object: Decoding dictionary (uid={})", object_ref);
                         Some(self.decode_dict(object_ref, dict)?)
                     }
                     "NSMutableArray" | "NSArray" => {
                         found = true;
-                        println!("decode_object: Decoding array (uid={})", object_ref);
+                        //println!("decode_object: Decoding array (uid={})", object_ref);
                         Some(self.decode_array(object_ref, dict)?)
                     }
                     _ => {
                         found = true;
-                        println!("decode_object: Decoding basic class (uid={})", object_ref);
+                        //println!("decode_object: Decoding basic class (uid={})", object_ref);
                         Some(self.decode_custom_class(object_ref, dict)?)
                     }
                 };
             }
             Ok(result)
         } else {
-            println!("decode_object: dereferenced_object (uid={object_ref}) is NOT a container. Return {:?}", dereferenced_object);
+            //println!("decode_object: dereferenced_object (uid={object_ref}) is NOT a container. Return {:?}", dereferenced_object);
             Ok(Some(dereferenced_object.clone()))
         }
     }
 
     fn get_class_names(&self, uid: &plist::Uid) -> Result<Vec<&str>, NSKeyedUnarchiverError> {
-        println!("get_class_names: uid = {}", uid.get());
+        //println!("get_class_names: uid = {}", uid.get());
 
         let Some(obj) = self.objects.get(uid.get() as usize) else {
             return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid.get()));
@@ -259,7 +259,7 @@ impl NSKeyedUnarchiver {
         let mut class_dict = Dictionary::new();
         for (key, value) in val {
             if key == "$class" {
-                println!("{:?}", value);
+                //println!("{:?}", value);
                 let Some(classes_obj) = self.decode_object(uid!(value, key.to_string()))? else {
                     return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid));
                 };
@@ -279,14 +279,14 @@ impl NSKeyedUnarchiver {
             if let Some(v) = decoded_value {
                 class_dict.insert(key.clone(), v);
             } else {
-                println!("decode_basic_class: Skipping an empty key-value pair");
+                //println!("decode_basic_class: Skipping an empty key-value pair");
             }
         }
         Ok(Value::Dictionary(class_dict))
     }
 
     fn decode_array(&self, uid: u64, val: &Dictionary) -> Result<Value, NSKeyedUnarchiverError> {
-        println!("decode_array: {:?}", val);
+        //println!("decode_array: {:?}", val);
         let Some(raw_object) = val.get("NS.objects").and_then(|objs| objs.as_array()) else {
             return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid));
         };
@@ -296,7 +296,7 @@ impl NSKeyedUnarchiver {
             if let Some(v) = decoded_value {
                 array.push(v);
             } else {
-                println!("decode_array: Skipping an empty key-value pair");
+                //println!("decode_array: Skipping an empty key-value pair");
             }
         }
         Ok(Value::Array(array))
@@ -309,8 +309,8 @@ impl NSKeyedUnarchiver {
         let Some(values) = val.get("NS.objects").and_then(|objs| objs.as_array()) else {
             return Err(NSKeyedUnarchiverError::InvalidObjectEncoding(uid));
         };
-        println!("Decode dict, keys: {:?}", keys);
-        println!("Decode dict, values: {:?}", values);
+        //println!("Decode dict, keys: {:?}", keys);
+        //println!("Decode dict, values: {:?}", values);
 
         // Decode keys and values
         let mut decoded_keys = Vec::with_capacity(keys.len());
@@ -328,8 +328,8 @@ impl NSKeyedUnarchiver {
             decoded_values.push(decoded_value);
         }
 
-        println!("decode_dict: decoded_keys = {:?}", decoded_keys);
-        println!("decode_dict: decoded_values = {:?}", decoded_keys);
+        //println!("decode_dict: decoded_keys = {:?}", decoded_keys);
+        //println!("decode_dict: decoded_values = {:?}", decoded_keys);
 
         // A dictionary key can be a number, a string or a custom object.
         // So we rather make an a array of dictionaries
