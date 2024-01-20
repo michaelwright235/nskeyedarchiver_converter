@@ -51,6 +51,16 @@ macro_rules! uid {
     };
 }
 
+/// Converts NSKeyedArchiver encoded plists to a human readable [plist::Value]
+/// structure.
+///
+/// ```rust
+/// use nskeyedarchiver_converter::Converter;
+///
+/// let decoded_file = Converter::from_file("foo.bin")?.decode()?;
+/// /// Now you can export it using plist::Value methods
+/// decoded_file.to_file_xml("foo.plist")?;
+/// ```
 pub struct Converter {
     objects: Vec<Value>,
     top: Dictionary,
