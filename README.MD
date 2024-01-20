@@ -1,7 +1,7 @@
 
 # NSKeyedArchiver Converter
 
-![Demo of NSKeyedArchiver Converter](demo.png)
+![A demo image of NSKeyedArchiver Converter](https://raw.githubusercontent.com/michaelwright235/nskeyedarchiver_converter/master/demo.png)
 
 Convert NSKeyedArchiver encoded plists to human readable formats.
 
