@@ -9,7 +9,7 @@ use nskeyedarchiver_converter::{Converter, ConverterError};
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Arguments {
-    /// Path to a NSKeyedArchive encoded plist
+    /// Path to a NSKeyedArchiver encoded plist
     plist_in: String,
 
     /// Path to an output file
@@ -28,12 +28,16 @@ struct Arguments {
     treat_all_as_classes: bool,
 }
 
-#[derive(Args, Clone)]
+#[derive(Args)]
 #[group(required = false, multiple = false)]
 struct OutputFormat {
-    /// Export in a plist binary format
+    /// Export in a plist format (default)
     #[arg(short)]
-    binary: bool,
+    plist: bool,
+
+    /// Export in a plist binary format
+    #[arg(short = 'b')]
+    plist_binary: bool,
 
     /// Export in a json format
     #[arg(short)]
@@ -49,7 +53,7 @@ fn main() -> Result<(), ConverterError> {
     let decoded_value = decoded_file.decode()?;
 
     if let Some(output_format) = args.output_format {
-        if output_format.binary {
+        if output_format.plist_binary {
             decoded_value.to_file_binary(args.file_out)?
         } else if output_format.json {
             let json = serde_json::to_string(&decoded_value).unwrap();
