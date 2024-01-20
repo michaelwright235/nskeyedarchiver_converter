@@ -42,9 +42,7 @@ Use `from_file`, `from_bytes`, `from_reader` or `new` method of `nskeyedarchiver
 ```rust
 use nskeyedarchiver_converter::Converter;
 
-let file_in = "./foo.bin";
-let file_out = "./foo.plist";
-Converter::from_file(file_in)?
+Converter::from_file("./foo.bin")?
     .decode()?
-    .to_file_xml(file_out)?;
+    .to_file_xml("./foo.plist")?;
 ```
