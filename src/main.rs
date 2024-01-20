@@ -1,8 +1,3 @@
-use std::{
-    fs::File,
-    io::{BufWriter, Write},
-};
-
 use clap::{Args, Parser};
 use nskeyedarchiver_converter::{Converter, ConverterError};
 
@@ -28,6 +23,7 @@ struct Arguments {
     treat_all_as_classes: bool,
 }
 
+#[cfg(feature = "exe_serde_json")]
 #[derive(Args)]
 #[group(required = false, multiple = false)]
 struct OutputFormat {
@@ -44,6 +40,19 @@ struct OutputFormat {
     json: bool,
 }
 
+#[cfg(not(feature = "exe_serde_json"))]
+#[derive(Args)]
+#[group(required = false, multiple = false)]
+struct OutputFormat {
+    /// Export in a plist format (default)
+    #[arg(short)]
+    plist: bool,
+
+    /// Export in a plist binary format
+    #[arg(short = 'b')]
+    plist_binary: bool,
+}
+
 fn main() -> Result<(), ConverterError> {
     let args = Arguments::parse();
     let mut decoded_file = Converter::from_file(args.plist_in)?;
@@ -54,8 +63,15 @@ fn main() -> Result<(), ConverterError> {
 
     if let Some(output_format) = args.output_format {
         if output_format.plist_binary {
-            decoded_value.to_file_binary(args.file_out)?
-        } else if output_format.json {
+            decoded_value.to_file_binary(&args.file_out)?
+        }
+
+        #[cfg(feature = "exe_serde_json")]
+        if output_format.json {
+            use std::{
+                fs::File,
+                io::{BufWriter, Write},
+            };
             let json = serde_json::to_string(&decoded_value).unwrap();
             let mut output = File::create(&args.file_out).unwrap();
             let mut writer = BufWriter::new(&mut output);
@@ -63,7 +79,7 @@ fn main() -> Result<(), ConverterError> {
             return Ok(());
         }
     } else {
-        decoded_value.to_file_xml(args.file_out)?
+        decoded_value.to_file_xml(&args.file_out)?
     }
 
     Ok(())

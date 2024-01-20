@@ -10,11 +10,15 @@ categories = ["command-line-utilities", "parser-implementations"]
 keywords = ["nskeyedarchiver", "plist", "parser"]
 exclude = ["demo.png"]
 
+[features]
+default = []
+exe_serde_json = ["dep:serde_json"]
+
 [dependencies]
 clap = { version = "4.4", features = ["derive"] }
 plist = "1"
 thiserror = "1.0"
-serde_json = "1.0"
+serde_json = { version = "1.0", optional = true }
 
 [profile.release]
 strip = true
