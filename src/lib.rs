@@ -182,7 +182,11 @@ impl Converter {
         Ok(objects_value)
     }
 
-    fn decode_object(&self, uid: &Uid, parents: &mut Vec<Uid>) -> Result<Option<Value>, ConverterError> {
+    fn decode_object(
+        &self,
+        uid: &Uid,
+        parents: &mut Vec<Uid>,
+    ) -> Result<Option<Value>, ConverterError> {
         let object_ref = uid.get();
 
         if object_ref == 0 {
@@ -191,9 +195,10 @@ impl Converter {
 
         if parents.contains(uid) {
             //println!("circular reference detected");
-            return Ok(Some(
-                plist::Value::String(format!("circular reference for uid #{}", uid.get()))
-            ));
+            return Ok(Some(plist::Value::String(format!(
+                "circular reference for uid #{}",
+                uid.get()
+            ))));
         }
         parents.push(*uid);
 
@@ -294,12 +299,19 @@ impl Converter {
         }
     }
 
-    fn decode_custom_class(&self, uid: u64, val: &Dictionary, parents: &mut Vec<Uid>) -> Result<Value, ConverterError> {
+    fn decode_custom_class(
+        &self,
+        uid: u64,
+        val: &Dictionary,
+        parents: &mut Vec<Uid>,
+    ) -> Result<Value, ConverterError> {
         let mut class_dict = Dictionary::new();
         for (key, value) in val {
             if key == "$class" {
                 //println!("{:?}", value);
-                let Some(classes_obj) = self.decode_object(uid!(value, key.to_string()), &mut parents.clone())? else {
+                let Some(classes_obj) =
+                    self.decode_object(uid!(value, key.to_string()), &mut parents.clone())?
+                else {
                     return Err(ConverterError::InvalidObjectEncoding(uid));
                 };
                 let Some(classes) = classes_obj
@@ -317,7 +329,8 @@ impl Converter {
                 Value::Array(arr) => {
                     let mut decoded_array = Vec::with_capacity(arr.len());
                     for val in arr {
-                        if let Ok(Some(unwrapped)) = self.decode_object(uid!(val, key.to_string()), parents)
+                        if let Ok(Some(unwrapped)) =
+                            self.decode_object(uid!(val, key.to_string()), parents)
                         {
                             decoded_array.push(unwrapped);
                         }
@@ -336,14 +349,22 @@ impl Converter {
         Ok(Value::Dictionary(class_dict))
     }
 
-    fn decode_array(&self, uid: u64, val: &Dictionary, parents: &mut Vec<Uid>) -> Result<Value, ConverterError> {
+    fn decode_array(
+        &self,
+        uid: u64,
+        val: &Dictionary,
+        parents: &mut Vec<Uid>,
+    ) -> Result<Value, ConverterError> {
         //println!("decode_array: {:?}", val);
         let Some(raw_object) = val.get("NS.objects").and_then(|objs| objs.as_array()) else {
             return Err(ConverterError::InvalidObjectEncoding(uid));
         };
         let mut array: Vec<Value> = Vec::with_capacity(raw_object.len());
         for element in raw_object {
-            let decoded_value = self.decode_object(uid!(element, "NS.objects".to_string()), &mut parents.clone())?;
+            let decoded_value = self.decode_object(
+                uid!(element, "NS.objects".to_string()),
+                &mut parents.clone(),
+            )?;
             if let Some(v) = decoded_value {
                 array.push(v);
             } else {
@@ -353,7 +374,12 @@ impl Converter {
         Ok(Value::Array(array))
     }
 
-    fn decode_dict(&self, uid: u64, val: &Dictionary, parents: &mut Vec<Uid>) -> Result<Value, ConverterError> {
+    fn decode_dict(
+        &self,
+        uid: u64,
+        val: &Dictionary,
+        parents: &mut Vec<Uid>,
+    ) -> Result<Value, ConverterError> {
         let Some(keys) = val.get("NS.keys").and_then(|keys| keys.as_array()) else {
             return Err(ConverterError::InvalidObjectEncoding(uid));
         };
@@ -367,13 +393,16 @@ impl Converter {
         let mut decoded_keys = Vec::with_capacity(keys.len());
         let mut decoded_values = Vec::with_capacity(values.len());
         for key in keys {
-            let Some(decoded_key) = self.decode_object(uid!(key, "NS.keys".to_string()), &mut parents.clone())? else {
+            let Some(decoded_key) =
+                self.decode_object(uid!(key, "NS.keys".to_string()), &mut parents.clone())?
+            else {
                 return Err(ConverterError::InvalidObjectEncoding(uid));
             };
             decoded_keys.push(decoded_key);
         }
         for value in values {
-            let Some(decoded_value) = self.decode_object(uid!(value, "NS.objects".to_string()), parents)?
+            let Some(decoded_value) =
+                self.decode_object(uid!(value, "NS.objects".to_string()), parents)?
             else {
                 return Err(ConverterError::InvalidObjectEncoding(uid));
             };
