@@ -146,7 +146,7 @@ impl Converter {
         let mut dict = Dictionary::new();
         for (key, value) in &self.top {
             let uid = uid!(value, key.to_string());
-            println!("-- TOP: {key} (uid={}) --", uid.get());
+            //println!("-- TOP: {key} (uid={}) --", uid.get());
             let mut parents = vec![];
             let Some(value) = self.decode_object(&uid.clone(), &mut parents)? else {
                 return Err(ConverterError::InvalidObjectEncoding(uid.get()));
