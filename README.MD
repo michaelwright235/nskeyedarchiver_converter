@@ -46,3 +46,9 @@ Converter::from_file("./foo.bin")?
     .decode()?
     .to_file_xml("./foo.plist")?;
 ```
+
+## Building an executable
+
+```bash
+cargo build --features build_binary --bin nskeyedarchiver_converter
+```
