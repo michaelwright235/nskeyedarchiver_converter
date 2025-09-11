@@ -353,7 +353,7 @@ impl Converter {
         &self,
         uid: u64,
         val: &Dictionary,
-        parents: &mut Vec<Uid>,
+        parents: &mut [Uid],
     ) -> Result<Value, ConverterError> {
         //println!("decode_array: {:?}", val);
         let Some(raw_object) = val.get("NS.objects").and_then(|objs| objs.as_array()) else {
@@ -363,7 +363,7 @@ impl Converter {
         for element in raw_object {
             let decoded_value = self.decode_object(
                 uid!(element, "NS.objects".to_string()),
-                &mut parents.clone(),
+                &mut parents.to_owned(),
             )?;
             if let Some(v) = decoded_value {
                 array.push(v);
